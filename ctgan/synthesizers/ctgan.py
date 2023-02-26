@@ -8,6 +8,7 @@ import torch
 from packaging import version
 from torch import optim
 from torch.nn import BatchNorm1d, Dropout, LeakyReLU, Linear, Module, ReLU, Sequential, functional
+import intel_extension_for_pytorch as ipex
 
 from ctgan.data_sampler import DataSampler
 from ctgan.data_transformer import DataTransformer
@@ -336,6 +337,11 @@ class CTGAN(BaseSynthesizer):
             betas=(0.5, 0.9), weight_decay=self._discriminator_decay
         )
 
+        # note: add ipex trainging optimization
+        self._generator.train(); discriminator.train()
+        self._generator, optimizerG = ipex.optimize(self._generator, optimizer=optimizerG)
+        discriminator, optimizerD = ipex.optimize(discriminator, optimizer=optimizerD)
+
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
 
@@ -417,7 +423,7 @@ class CTGAN(BaseSynthesizer):
                 optimizerG.step()
 
             if self._verbose:
-                print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f},'  # noqa: T001
+                print(f'Epoch {i+1}, Loss G: {loss_g.detach().cpu(): .4f}, '  # noqa: T001
                       f'Loss D: {loss_d.detach().cpu(): .4f}',
                       flush=True)
 
@@ -447,6 +453,10 @@ class CTGAN(BaseSynthesizer):
                 condition_info, self._batch_size)
         else:
             global_condition_vec = None
+
+        # note: add ipex eval optimization
+        self._generator.eval()
+        self._generator = ipex.optimize(self._generator)
 
         steps = n // self._batch_size + 1
         data = []
