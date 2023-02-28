@@ -155,7 +155,7 @@ class TVAE(BaseSynthesizer):
         self.batch_size = batch_size
         self.loss_factor = loss_factor
         self.epochs = epochs
-        self._verbose = verbose
+        self.verbose = verbose
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -165,6 +165,7 @@ class TVAE(BaseSynthesizer):
             device = 'cuda'
 
         self._device = torch.device(device)
+        self.vae = None     # note: add here a new member variable
 
     @random_state
     def fit(self, train_data, discrete_columns=()):
@@ -186,7 +187,10 @@ class TVAE(BaseSynthesizer):
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
 
         data_dim = self.transformer.output_dimensions
-        self.vae = VAE(data_dim, self.compress_dims, self.embedding_dim, self.decompress_dims).to(self._device)
+        # note: modify here. If any model is None, we will create it,
+        # otherwise represent that the model is loaded externally
+        if self.vae is None:
+            self.vae = VAE(data_dim, self.compress_dims, self.embedding_dim, self.decompress_dims).to(self._device)
         optimizerAE = Adam(
             self.vae.parameters(),
             weight_decay=self.l2scale)
@@ -210,7 +214,7 @@ class TVAE(BaseSynthesizer):
                 self.vae.decoder.sigma.data.clamp_(0.01, 1.0)
             
             # note: add verbose
-            if self._verbose:
+            if self.verbose:
                 print(f'Epoch {i+1}, Loss 1: {loss_1.detach().cpu(): .4f}, '  # noqa: T001
                       f'Loss 2: {loss_2.detach().cpu(): .4f} ',
                       f'Loss: {loss.detach().cpu(): .4f}',
@@ -250,3 +254,22 @@ class TVAE(BaseSynthesizer):
         """Set the `device` to be used ('GPU' or 'CPU)."""
         self._device = device
         self.vae.decoder.to(self._device)
+
+    # note: add a new function to update model parameters if model loaded externally
+    def update_parameters(self, model_kwargs):
+        constraint = ["embedding_dim", "compress_dims", "decompress_dims", "cuda"]     # these parameters can't be modified
+
+        for key, value in model_kwargs.items():
+            if key == "cuda":   # skip cuda reset, keeping original device set
+                continue
+
+            if key in constraint:
+                assert value == self.__dict__.get(key), "Can't reset key \"{}\"".format(key)
+
+            try:
+                getattr(self, key)
+            except Exception:
+                print("Model {} key \"{}\" not found, Please check meta_kwargs".format(self.__class__.__name__, key))
+                raise
+            
+            self.__dict__.update({key: value})
