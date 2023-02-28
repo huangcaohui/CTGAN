@@ -116,13 +116,13 @@ class CTGAN(BaseSynthesizer):
         generator_decay (float):
             Generator weight decay for the Adam Optimizer. Defaults to 1e-6.
         discriminator_lr (float):
-            Learning rate for the discriminator. Defaults to 2e-4.
+            Learning rate for the self._discriminator. Defaults to 2e-4.
         discriminator_decay (float):
             Discriminator weight decay for the Adam Optimizer. Defaults to 1e-6.
         batch_size (int):
             Number of data samples to process in each step.
         discriminator_steps (int):
-            Number of discriminator updates to do for each generator update.
+            Number of self._discriminator updates to do for each generator update.
             From the WGAN paper: https://arxiv.org/abs/1701.07875. WGAN paper
             default is 5. Default used is 1 to match original CTGAN implementation.
         log_frequency (boolean):
@@ -133,7 +133,7 @@ class CTGAN(BaseSynthesizer):
         epochs (int):
             Number of training epochs. Defaults to 300.
         pac (int):
-            Number of samples to group together when applying the discriminator.
+            Number of samples to group together when applying the self._discriminator.
             Defaults to 10.
         cuda (bool):
             Whether to attempt to use cuda for GPU computation.
@@ -162,7 +162,7 @@ class CTGAN(BaseSynthesizer):
         self._log_frequency = log_frequency
         self._verbose = verbose
         self._epochs = epochs
-        self.pac = pac
+        self._pac = pac
 
         if not cuda or not torch.cuda.is_available():
             device = 'cpu'
@@ -176,6 +176,7 @@ class CTGAN(BaseSynthesizer):
         self._transformer = None
         self._data_sampler = None
         self._generator = None
+        self._discriminator = None
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -315,17 +316,20 @@ class CTGAN(BaseSynthesizer):
 
         data_dim = self._transformer.output_dimensions
 
-        self._generator = Generator(
-            self._embedding_dim + self._data_sampler.dim_cond_vec(),
-            self._generator_dim,
-            data_dim
-        ).to(self._device)
+        # note: modify here. If any model is None, we will create it,
+        # otherwise represent that the model is loaded externally
+        if self._generator is None or self._discriminator is None:
+            self._generator = Generator(
+                self._embedding_dim + self._data_sampler.dim_cond_vec(),
+                self._generator_dim,
+                data_dim
+            ).to(self._device)
 
-        discriminator = Discriminator(
-            data_dim + self._data_sampler.dim_cond_vec(),
-            self._discriminator_dim,
-            pac=self.pac
-        ).to(self._device)
+            self._discriminator = Discriminator(
+                data_dim + self._data_sampler.dim_cond_vec(),
+                self._discriminator_dim,
+                pac=self._pac
+            ).to(self._device)
 
         optimizerG = optim.Adam(
             self._generator.parameters(), lr=self._generator_lr, betas=(0.5, 0.9),
@@ -333,14 +337,14 @@ class CTGAN(BaseSynthesizer):
         )
 
         optimizerD = optim.Adam(
-            discriminator.parameters(), lr=self._discriminator_lr,
+            self._discriminator.parameters(), lr=self._discriminator_lr,
             betas=(0.5, 0.9), weight_decay=self._discriminator_decay
         )
 
         # note: add ipex trainging optimization
-        self._generator.train(); discriminator.train()
+        self._generator.train(); self._discriminator.train()
         self._generator, optimizerG = ipex.optimize(self._generator, optimizer=optimizerG)
-        discriminator, optimizerD = ipex.optimize(discriminator, optimizer=optimizerD)
+        self._discriminator, optimizerD = ipex.optimize(self._discriminator, optimizer=optimizerD)
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
@@ -380,11 +384,11 @@ class CTGAN(BaseSynthesizer):
                         real_cat = real
                         fake_cat = fakeact
 
-                    y_fake = discriminator(fake_cat)
-                    y_real = discriminator(real_cat)
+                    y_fake = self._discriminator(fake_cat)
+                    y_real = self._discriminator(real_cat)
 
-                    pen = discriminator.calc_gradient_penalty(
-                        real_cat, fake_cat, self._device, self.pac)
+                    pen = self._discriminator.calc_gradient_penalty(
+                        real_cat, fake_cat, self._device, self._pac)
                     loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
 
                     optimizerD.zero_grad()
@@ -407,9 +411,9 @@ class CTGAN(BaseSynthesizer):
                 fakeact = self._apply_activate(fake)
 
                 if c1 is not None:
-                    y_fake = discriminator(torch.cat([fakeact, c1], dim=1))
+                    y_fake = self._discriminator(torch.cat([fakeact, c1], dim=1))
                 else:
-                    y_fake = discriminator(fakeact)
+                    y_fake = self._discriminator(fakeact)
 
                 if condvec is None:
                     cross_entropy = 0
@@ -491,3 +495,23 @@ class CTGAN(BaseSynthesizer):
         self._device = device
         if self._generator is not None:
             self._generator.to(self._device)
+
+    # note: add a new function to update model parameters if model loaded externally
+    def update_parameters(self, model_kwargs):
+        constraint = ["embedding_dim", "generator_dim", "discriminator_dim"]     # these parameters can't be modified
+
+        for key, value in model_kwargs.items():
+            if key == "cuda":   # skip cuda reset, keeping original device set
+                continue
+
+            if key in constraint:
+                assert value == self.__dict__.get('_' + key), "Can't reset key \"{}\"".format(key)
+
+            try:
+                getattr(self, '_' + key)
+            except Exception:
+                print("Model {} key \"{}\" not found, Please check meta_kwargs".format(self.__class__.__name__, key))
+                raise
+            
+            self.__dict__.update({'_' + key: value})
+
