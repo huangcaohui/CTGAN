@@ -6,7 +6,7 @@ from torch.nn import Linear, Module, Parameter, ReLU, Sequential
 from torch.nn.functional import cross_entropy
 from torch.optim import Adam
 from torch.utils.data import DataLoader, TensorDataset
-import intel_extension_for_pytorch as ipex
+# import intel_extension_for_pytorch as ipex
 
 from ctgan.data_transformer import DataTransformer
 from ctgan.synthesizers.base import BaseSynthesizer, random_state
@@ -197,7 +197,7 @@ class TVAE(BaseSynthesizer):
         
         # note: add ipex trainging optimization
         self.vae.train()
-        self.vae, optimizerAE = ipex.optimize(self.vae, optimizer=optimizerAE)
+        # self.vae, optimizerAE = ipex.optimize(self.vae, optimizer=optimizerAE)
 
         for i in range(self.epochs):
             for id_, data in enumerate(loader):
@@ -234,7 +234,7 @@ class TVAE(BaseSynthesizer):
         self.vae.decoder.eval()
 
         # note: add ipex eval optimization
-        self.vae.decoder = ipex.optimize(self.vae.decoder)
+        # self.vae.decoder = ipex.optimize(self.vae.decoder)
 
         steps = samples // self.batch_size + 1
         data = []
