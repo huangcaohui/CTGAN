@@ -345,6 +345,7 @@ class CTGAN(BaseSynthesizer):
         self._generator.train(); self._discriminator.train()
         # self._generator, optimizerG = ipex.optimize(self._generator, optimizer=optimizerG)
         # self._discriminator, optimizerD = ipex.optimize(self._discriminator, optimizer=optimizerD)
+        self.net_summary(self._generator, (self._embedding_dim + self._data_sampler.dim_cond_vec(),))
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
@@ -352,7 +353,6 @@ class CTGAN(BaseSynthesizer):
         steps_per_epoch = max(len(train_data) // self._batch_size, 1)
         for i in range(epochs):
             for id_ in range(steps_per_epoch):
-
                 for n in range(self._discriminator_steps):
                     fakez = torch.normal(mean=mean, std=std)
 

@@ -198,6 +198,7 @@ class TVAE(BaseSynthesizer):
         # note: add ipex trainging optimization
         self.vae.train()
         # self.vae, optimizerAE = ipex.optimize(self.vae, optimizer=optimizerAE)
+        self.net_summary(self.vae, (data_dim,))
 
         for i in range(self.epochs):
             for id_, data in enumerate(loader):
