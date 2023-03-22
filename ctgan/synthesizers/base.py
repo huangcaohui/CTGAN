@@ -208,8 +208,12 @@ class BaseSynthesizer:
         if isinstance(input_size, tuple):
             input_size = [input_size]
 
-        # batch_size of 2 for batchnorm
-        x = [torch.rand(2, *in_size).type(dtype) for in_size in input_size]
+        # batch_size of 2 if batch_size not specified for batchnorm
+        if batch_size > 0:
+            x = [torch.rand(batch_size, *in_size).type(dtype) for in_size in input_size]
+        else:
+            x = [torch.rand(2, *in_size).type(dtype) for in_size in input_size]
+
         # LOGGER.info(type(x[0]))
 
         # create properties
@@ -227,6 +231,8 @@ class BaseSynthesizer:
         for h in hooks:
             h.remove()
 
+        LOGGER.info("----------------------------------------------------------------")
+        LOGGER.info("Model: {}".format(model.__class__.__name__))
         LOGGER.info("----------------------------------------------------------------")
         line_new = "{:>20}  {:>25} {:>15}".format("Layer (type)", "Output Shape", "Param #")
         LOGGER.info(line_new)

@@ -346,6 +346,7 @@ class CTGAN(BaseSynthesizer):
         # self._generator, optimizerG = ipex.optimize(self._generator, optimizer=optimizerG)
         # self._discriminator, optimizerD = ipex.optimize(self._discriminator, optimizer=optimizerD)
         self.net_summary(self._generator, (self._embedding_dim + self._data_sampler.dim_cond_vec(),))
+        self.net_summary(self._discriminator, (data_dim + self._data_sampler.dim_cond_vec(),), batch_size=self._pac)
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
